@@ -45,114 +45,65 @@
     </div>
 
     <script type="module">
-        // --- CONFIGURATION ---
-        const API_URL = "YOUR_SERVER_URL_HERE"; // IMPORTANT: Update this after you deploy your Python backend
-        const DEBOUNCE_DELAY = 300;
+        const SCRIPT_CONFIG = {
+            API_URL: "YOUR_SERVER_URL_HERE", // IMPORTANT: Update this after you deploy your Python backend
+            DEBOUNCE_DELAY: 300, EMA_ALPHA_MIN: 0.15, EMA_ALPHA_MAX: 0.7, LARGE_CHANGE_THRESHOLD: 50,
+        };
+        const D = { textInput: document.getElementById('reactivity-input'), feedbackGrid: document.querySelector('.feedback-grid'), gaugeValue: document.getElementById('gauge-value'), gaugeBadge: document.getElementById('gauge-badge'), gaugeScore: document.getElementById('gauge-score'), coachOutput: document.getElementById('coach-output'), chipsContainer: document.getElementById('chips-container') };
+        let smoothedScore = 0, lastAnalyzedText = '', typingTimer;
         const circumference = 326.7;
 
-        // --- DOM ELEMENTS ---
-        const D = {
-            textInput: document.getElementById('reactivity-input'),
-            feedbackGrid: document.querySelector('.feedback-grid'),
-            gaugeValue: document.getElementById('gauge-value'),
-            gaugeBadge: document.getElementById('gauge-badge'),
-            gaugeScore: document.getElementById('gauge-score'),
-            coachOutput: document.getElementById('coach-output'),
-            chipsContainer: document.getElementById('chips-container')
-        };
+        function updateGauge(score) { if (score < 0.15) { score = 0; } const p=Math.round(score*100),o=circumference*(1-score);let c='#00E091',b='CALM';if(score>=0.8){c='#d90429';b='CRITICAL';}else if(score>=0.6){c='#FF5A5A';b='HIGH';}else if(score>=0.4){c='#FFC700';b='MEDIUM';}else if(score>=0.2){c='#76c893';b='LOW';}D.gaugeValue.style.strokeDashoffset=o;D.gaugeValue.style.stroke=c;D.gaugeBadge.textContent=b;D.gaugeBadge.style.color=c;D.gaugeScore.textContent=`${p}%`;};
+        function updateChips(triggers = []) { D.chipsContainer.innerHTML='';triggers.slice(0,4).forEach(t=>{const c=document.createElement('div');c.className='chip';c.textContent=t;D.chipsContainer.appendChild(c);});};
+        function updateCoaching(score, triggers = []) {const s=new Set(triggers.map(t=>t.toLowerCase()));let c="Notice the body breathing.";if(score>=0.7)c=s.has("accusation")?"Focus on 'I' statements.":"Soften shoulders.";else if(score>=0.4)c="Is this truly urgent? One slower breath.";D.coachOutput.textContent=c;};
+        function resetUI() { smoothedScore = 0; lastAnalyzedText = ''; updateGauge(0); updateChips([]); D.coachOutput.textContent='Waiting for input...'; D.feedbackGrid.classList.add('is-idle'); }
+        function levenshtein(a,b){const m=Array(b.length+1).fill(null).map(()=>Array(a.length+1).fill(null));for(let i=0;i<=a.length;i+=1){m[0][i]=i;}for(let j=0;j<=b.length;j+=1){m[j][0]=j;}for(let j=1;j<=b.length;j+=1){for(let i=1;i<=a.length;i+=1){const ind=a[i-1]===b[j-1]?0:1;m[j][i]=Math.min(m[j][i-1]+1,m[j-1][i]+1,m[j-1][i-1]+ind);}}return m[b.length][a.length];}
 
-        let typingTimer;
-        let lastAnalyzedText = '';
-
-        // --- UI UPDATE FUNCTIONS ---
-        function updateGauge(score) {
-            if (score < 0.15) { score = 0; }
-            const percentage = Math.round(score * 100);
-            const offset = circumference * (1 - score);
-            let color = '#00E091', badgeText = 'CALM';
-            if (score >= 0.8) { color = '#d90429'; badgeText = 'CRITICAL'; } 
-            else if (score >= 0.6) { color = '#FF5A5A'; badgeText = 'HIGH'; } 
-            else if (score >= 0.4) { color = '#FFC700'; badgeText = 'MEDIUM'; } 
-            else if (score >= 0.2) { color = '#76c893'; badgeText = 'LOW'; }
-            D.gaugeValue.style.strokeDashoffset = offset;
-            D.gaugeValue.style.stroke = color;
-            D.gaugeBadge.textContent = badgeText;
-            D.gaugeBadge.style.color = color;
-            D.gaugeScore.textContent = `${percentage}%`;
-        }
-
-        function updateChips(triggers = []) {
-            D.chipsContainer.innerHTML = '';
-            triggers.slice(0, 4).forEach(t => {
-                const chip = document.createElement('div');
-                chip.className = 'chip';
-                chip.textContent = t;
-                D.chipsContainer.appendChild(chip);
-            });
-        }
-
-        function updateCoaching(score, triggers = []) {
-            const s = new Set(triggers.map(t => t.toLowerCase()));
-            let c = "Notice the body breathing.";
-            if (score >= 0.7) c = s.has("accusation") ? "Focus on 'I' statements." : "Soften shoulders.";
-            else if (score >= 0.4) c = "Is this truly urgent? One slower breath.";
-            D.coachOutput.textContent = c;
-        }
-
-        function resetUI() {
-            updateGauge(0);
-            updateChips([]);
-            D.coachOutput.textContent = 'Waiting for input...';
-            D.feedbackGrid.classList.add('is-idle');
-        }
-
-        // --- MAIN ANALYSIS FUNCTION ---
         async function analyze() {
-            const text = D.textInput.value;
-            const normalizedText = text.trim();
-
+            const normalizedText = D.textInput.value.trim();
             if (normalizedText === lastAnalyzedText) return;
             if (!normalizedText) { resetUI(); return; }
 
-            lastAnalyzedText = normalizedText;
             D.feedbackGrid.classList.remove('is-idle');
             D.coachOutput.classList.add('analyzing');
             D.coachOutput.textContent = '...';
 
             try {
-                if (!API_URL.startsWith('http')) {
-                    throw new Error("API_URL is not configured. Please update the script.");
-                }
-
-                const response = await fetch(`${API_URL}/analyze`, {
+                if (!SCRIPT_CONFIG.API_URL.startsWith('http')) throw new Error("API_URL is not configured.");
+                
+                const response = await fetch(`${SCRIPT_CONFIG.API_URL}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: normalizedText })
                 });
-
-                if (!response.ok) throw new Error(`Server returned an error: ${response.status}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
                 
                 const result = await response.json();
-                
-                updateGauge(result.reactive_score);
+                const distance = levenshtein(lastAnalyzedText, normalizedText);
+                const isLargeChange = distance > SCRIPT_CONFIG.LARGE_CHANGE_THRESHOLD || lastAnalyzedText === '';
+                let dynamicAlpha = isLargeChange ? 1.0 : SCRIPT_CONFIG.EMA_ALPHA_MIN + (SCRIPT_CONFIG.EMA_ALPHA_MAX - SCRIPT_CONFIG.EMA_ALPHA_MIN) * Math.min(distance / SCRIPT_CONFIG.LARGE_CHANGE_THRESHOLD, 1.0);
+
+                lastAnalyzedText = normalizedText;
+                const currentScore = Math.max(0, Math.min(1, result.reactive_score));
+                smoothedScore = (dynamicAlpha * currentScore) + (1 - dynamicAlpha) * smoothedScore;
+
+                updateGauge(smoothedScore);
                 updateChips(result.triggers);
-                updateCoaching(result.reactive_score, result.triggers);
-                
+                updateCoaching(smoothedScore, result.triggers);
+
             } catch (error) {
                 console.error("Analysis failed:", error);
-                D.coachOutput.textContent = 'Analysis service is unavailable.';
+                D.coachOutput.textContent = 'Analysis service unavailable.';
             } finally {
                 D.coachOutput.classList.remove('analyzing');
             }
         }
 
-        // --- INITIALIZATION ---
         D.textInput.addEventListener('input', () => {
             clearTimeout(typingTimer);
-            typingTimer = setTimeout(analyze, DEBOUNCE_DELAY);
+            typingTimer = setTimeout(analyze, SCRIPT_CONFIG.DEBOUNCE_DELAY);
         });
-
-        resetUI(); // Set the initial state
+        resetUI();
     </script>
 </body>
 </html>
