@@ -23,6 +23,8 @@
         .coach-output.analyzing { animation: pulsing 1.5s infinite; }
         @keyframes pulsing { 0% { background-color: #eaf2ff; } 50% { background-color: #dbe8ff; } 100% { background-color: #eaf2ff; } }
         .feedback-grid.is-idle .gauge-container, .feedback-grid.is-idle .chips-container { opacity: 0.35; transition: opacity 0.3s ease; }
+        .progress-container { grid-column: 1 / -1; width: 100%; height: 8px; background: #e5e5e5; border-radius: 4px; overflow: hidden; margin-top: 8px;}
+        .progress-bar { width: 0%; height: 100%; background: #4a90e2; transition: width 0.1s linear; }
     </style>
 </head>
 <body>
@@ -41,6 +43,9 @@
             </div>
             <div id="coach-output" class="coach-output">Waiting for input...</div>
             <div id="chips-container" class="chips-container"></div>
+            <div id="progress-container" class="progress-container" style="display: none;">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
         </div>
     </div>
 
@@ -50,33 +55,33 @@
             debounceDelay: 300, EMA_ALPHA_MIN: 0.15, EMA_ALPHA_MAX: 0.7, LARGE_CHANGE_THRESHOLD: 50,
             systemPrompt: `You are an expert text analyzer. Your response MUST be ONLY a single, minified JSON object with two keys: "reactive_score" (a number from 0.0 to 1.0) and "triggers" (an array of strings). Example: {"reactive_score":0.8,"triggers":["blame"]}`,
         };
-        const D = { textInput: document.getElementById('reactivity-input'), feedbackGrid: document.querySelector('.feedback-grid'), gaugeValue: document.getElementById('gauge-value'), gaugeBadge: document.getElementById('gauge-badge'), gaugeScore: document.getElementById('gauge-score'), coachOutput: document.getElementById('coach-output'), chipsContainer: document.getElementById('chips-container') };
+        const D = { textInput: document.getElementById('reactivity-input'), feedbackGrid: document.querySelector('.feedback-grid'), gaugeValue: document.getElementById('gauge-value'), gaugeBadge: document.getElementById('gauge-badge'), gaugeScore: document.getElementById('gauge-score'), coachOutput: document.getElementById('coach-output'), chipsContainer: document.getElementById('chips-container'), progressContainer: document.getElementById('progress-container'), progressBar: document.getElementById('progress-bar') };
         let smoothedScore = 0, lastAnalyzedText = '', typingTimer;
         const circumference = 326.7;
 
-        function updateGauge(score) { if (score < 0.15) { score = 0; } const p = Math.round(score * 100), o = circumference * (1 - score); let c = '#00E091', b = 'CALM'; if (score >= 0.8) { c = '#d90429'; b = 'CRITICAL'; } else if (score >= 0.6) { c = '#FF5A5A'; b = 'HIGH'; } else if (score >= 0.4) { c = '#FFC700'; b = 'MEDIUM'; } else if (score >= 0.2) { c = '#76c893'; b = 'LOW'; } D.gaugeValue.style.strokeDashoffset = o; D.gaugeValue.style.stroke = c; D.gaugeBadge.textContent = b; D.gaugeBadge.style.color = c; D.gaugeScore.textContent = `${p}%`; };
-        function updateChips(triggers = []) { D.chipsContainer.innerHTML = ''; triggers.slice(0, 4).forEach(t => { const c = document.createElement('div'); c.className = 'chip'; c.textContent = t; D.chipsContainer.appendChild(c); }); };
-        function updateCoaching(score, triggers = []) { const s = new Set(triggers.map(t => t.toLowerCase())); let c = "Notice the body breathing."; if (score >= 0.7) c = s.has("blame") ? "Pause. Three slow breaths." : "Soften shoulders."; else if (score >= 0.4) c = s.has("urgency") ? "Is this truly urgent? One slower breath." : "Unclench the jaw."; D.coachOutput.textContent = c; };
-        function resetUI(message = 'Initializing AI engine...') { smoothedScore = 0; lastAnalyzedText = ''; updateGauge(0); updateChips([]); D.coachOutput.textContent = message; D.feedbackGrid.classList.add('is-idle'); }
+        function updateGauge(score) { if (score < 0.15) { score = 0; } const p=Math.round(score*100),o=circumference*(1-score);let c='#00E091',b='CALM';if(score>=0.8){c='#d90429';b='CRITICAL';}else if(score>=0.6){c='#FF5A5A';b='HIGH';}else if(score>=0.4){c='#FFC700';b='MEDIUM';}else if(score>=0.2){c='#76c893';b='LOW';}D.gaugeValue.style.strokeDashoffset=o;D.gaugeValue.style.stroke=c;D.gaugeBadge.textContent=b;D.gaugeBadge.style.color=c;D.gaugeScore.textContent=`${p}%`;};
+        function updateChips(triggers = []) { D.chipsContainer.innerHTML='';triggers.slice(0,4).forEach(t=>{const c=document.createElement('div');c.className='chip';c.textContent=t;D.chipsContainer.appendChild(c);});};
+        function updateCoaching(score, triggers = []) {const s=new Set(triggers.map(t=>t.toLowerCase()));let c="Notice the body breathing.";if(score>=0.7)c=s.has("blame")?"Pause. Three slow breaths.":"Soften shoulders.";else if(score>=0.4)c=s.has("urgency")?"Is this truly urgent? One slower breath.":"Unclench the jaw.";D.coachOutput.textContent=c;};
+        function resetUI(message='Initializing AI engine...') { smoothedScore=0;lastAnalyzedText='';updateGauge(0);updateChips([]);D.coachOutput.textContent=message;D.feedbackGrid.classList.add('is-idle'); D.progressContainer.style.display='none'; D.progressBar.style.width='0%';}
         function levenshtein(a,b){const m=Array(b.length+1).fill(null).map(()=>Array(a.length+1).fill(null));for(let i=0;i<=a.length;i+=1){m[0][i]=i;}for(let j=0;j<=b.length;j+=1){m[j][0]=j;}for(let j=1;j<=b.length;j+=1){for(let i=1;i<=a.length;i+=1){const ind=a[i-1]===b[j-1]?0:1;m[j][i]=Math.min(m[j][i-1]+1,m[j-1][i]+1,m[j-1][i-1]+ind);}}return m[b.length][a.length];}
 
         if (window.Worker) {
             resetUI('Starting worker...');
             const worker = new Worker('./worker.js', { type: 'module' });
-            
-            const workerTimeout = setTimeout(() => {
-                D.coachOutput.textContent = 'Worker is starting slowly...';
-            }, 4000);
-
             worker.postMessage({ type: 'INITIALIZE', config: SCRIPT_CONFIG });
 
             worker.onmessage = (event) => {
-                clearTimeout(workerTimeout); // Worker is alive
-                const { type, payload, text } = event.data;
+                const { type, payload, text, percentage } = event.data;
 
                 if (type === 'STATUS') {
+                    D.progressContainer.style.display = 'none';
                     D.coachOutput.textContent = text;
+                } else if (type === 'DOWNLOAD_PROGRESS') {
+                    D.progressContainer.style.display = 'block';
+                    D.coachOutput.textContent = text;
+                    D.progressBar.style.width = `${percentage}%`;
                 } else if (type === 'READY') {
+                    D.progressContainer.style.display = 'none';
                     D.coachOutput.textContent = 'Model ready. Type something to begin.';
                     D.textInput.disabled = false;
                     D.textInput.placeholder = "Type what you're about to send...";
@@ -113,8 +118,7 @@
                 }
             };
             D.textInput.disabled = true;
-            D.textInput.placeholder = "Please wait, model is loading...";
-
+            D.textInput.placeholder = "Please wait, AI engine is loading...";
         } else {
             D.coachOutput.textContent = "Web Workers are not supported in this browser.";
         }
