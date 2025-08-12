@@ -46,7 +46,7 @@
 
     <script type="module">
         const SCRIPT_CONFIG = {
-            API_URL: "YOUR_SERVER_URL_HERE", // IMPORTANT: Update this after you deploy your Python backend
+            API_URL: "https://ronblank-reactivity-mirror-backend.hf.space/analyze",
             DEBOUNCE_DELAY: 300, EMA_ALPHA_MIN: 0.15, EMA_ALPHA_MAX: 0.7, LARGE_CHANGE_THRESHOLD: 50,
         };
         const D = { textInput: document.getElementById('reactivity-input'), feedbackGrid: document.querySelector('.feedback-grid'), gaugeValue: document.getElementById('gauge-value'), gaugeBadge: document.getElementById('gauge-badge'), gaugeScore: document.getElementById('gauge-score'), coachOutput: document.getElementById('coach-output'), chipsContainer: document.getElementById('chips-container') };
@@ -70,14 +70,14 @@
 
             try {
                 if (!SCRIPT_CONFIG.API_URL.startsWith('http')) throw new Error("API_URL is not configured.");
-                
+
                 const response = await fetch(`${SCRIPT_CONFIG.API_URL}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: normalizedText })
                 });
                 if (!response.ok) throw new Error(`Server error: ${response.status}`);
-                
+
                 const result = await response.json();
                 const distance = levenshtein(lastAnalyzedText, normalizedText);
                 const isLargeChange = distance > SCRIPT_CONFIG.LARGE_CHANGE_THRESHOLD || lastAnalyzedText === '';
