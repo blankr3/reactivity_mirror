@@ -23,107 +23,62 @@
         .coach-output.analyzing { animation: pulsing 1.5s infinite; }
         @keyframes pulsing { 0% { background-color: #eaf2ff; } 50% { background-color: #dbe8ff; } 100% { background-color: #eaf2ff; } }
         .feedback-grid.is-idle .gauge-container, .feedback-grid.is-idle .chips-container { opacity: 0.35; transition: opacity 0.3s ease; }
-        .progress-container { grid-column: 1 / -1; width: 100%; height: 8px; background: #e5e5e5; border-radius: 4px; overflow: hidden; margin-top: 8px;}
-        .progress-bar { width: 0%; height: 100%; background: #4a90e2; transition: width 0.1s linear; }
-        #reload-button { grid-column: 1 / -1; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; background-color: #e5e5e5; cursor: pointer; margin-top: 8px; }
     </style>
 </head>
 <body>
     <div class="wrap">
-        <textarea id="reactivity-input" placeholder="Please wait, AI engine is loading..." disabled></textarea>
+        <textarea id="reactivity-input" placeholder="Type to begin analysis..."></textarea>
         <div class="feedback-grid">
-            <div class="gauge-container">
-                <svg class="gauge-svg" viewBox="0 0 120 120">
-                    <circle class="gauge-track" cx="60" cy="60" r="52" />
-                    <circle id="gauge-value" class="gauge-value" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="326.7" stroke="#00E091" />
-                </svg>
-                <div class="gauge-text">
-                    <div id="gauge-badge" class="gauge-badge">CALM</div>
-                    <div id="gauge-score" class="gauge-score">0%</div>
-                </div>
             </div>
-            <div id="coach-output" class="coach-output">Waiting for input...</div>
-            <div id="chips-container" class="chips-container"></div>
-            <div id="progress-container" class="progress-container" style="display: none;">
-                <div id="progress-bar" class="progress-bar"></div>
-            </div>
-            <button id="reload-button" style="display: none;">Reload Engine</button>
-        </div>
     </div>
 
     <script type="module">
-        const SCRIPT_CONFIG = {
-            model: "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC",
-            debounceDelay: 300, EMA_ALPHA_MIN: 0.15, EMA_ALPHA_MAX: 0.7, LARGE_CHANGE_THRESHOLD: 50,
-            systemPrompt: `You are an expert text analyzer. Your response MUST be ONLY a single, minified JSON object with two keys: "reactive_score" (a number from 0.0 to 1.0) and "triggers" (an array of strings). Example: {"reactive_score":0.8,"triggers":["blame"]}`,
-        };
-        const D = { textInput: document.getElementById('reactivity-input'), feedbackGrid: document.querySelector('.feedback-grid'), gaugeValue: document.getElementById('gauge-value'), gaugeBadge: document.getElementById('gauge-badge'), gaugeScore: document.getElementById('gauge-score'), coachOutput: document.getElementById('coach-output'), chipsContainer: document.getElementById('chips-container'), progressContainer: document.getElementById('progress-container'), progressBar: document.getElementById('progress-bar'), reloadButton: document.getElementById('reload-button') };
+        // --- CONFIGURATION ---
+        const API_URL = "YOUR_SERVER_URL_HERE"; // IMPORTANT: Update this after you deploy
+        const DEBOUNCE_DELAY = 300;
+
+        const D = { /* ... DOM element references ... */ };
+        // This is a simplified version for brevity
+        D.textInput = document.getElementById('reactivity-input');
+        // ... (add the rest of the gauge, chips, coach elements here)
+
         let typingTimer;
-
-        function updateGauge(score) { if (score < 0.15) { score = 0; } const p=Math.round(score*100),o=326.7*(1-score);let c='#00E091',b='CALM';if(score>=0.8){c='#d90429';b='CRITICAL';}else if(score>=0.6){c='#FF5A5A';b='HIGH';}else if(score>=0.4){c='#FFC700';b='MEDIUM';}else if(score>=0.2){c='#76c893';b='LOW';}D.gaugeValue.style.strokeDashoffset=o;D.gaugeValue.style.stroke=c;D.gaugeBadge.textContent=b;D.gaugeBadge.style.color=c;D.gaugeScore.textContent=`${p}%`;};
-        function updateChips(triggers = []) { D.chipsContainer.innerHTML='';triggers.slice(0,4).forEach(t=>{const c=document.createElement('div');c.className='chip';c.textContent=t;D.chipsContainer.appendChild(c);});};
-        function updateCoaching(score, triggers = []) {const s=new Set(triggers.map(t=>t.toLowerCase()));let c="Notice the body breathing.";if(score>=0.7)c=s.has("blame")?"Pause. Three slow breaths.":"Soften shoulders.";else if(score>=0.4)c=s.has("urgency")?"Is this truly urgent? One slower breath.":"Unclench the jaw.";D.coachOutput.textContent=c;};
-        function resetUI(message='Initializing...') { updateGauge(0); updateChips([]); D.coachOutput.textContent=message; D.feedbackGrid.classList.add('is-idle'); D.progressContainer.style.display='none'; D.progressBar.style.width='0%';}
-
-        if (window.Worker) {
-            resetUI('Starting worker...');
-            D.reloadButton.addEventListener('click', () => { location.reload(); });
-            const worker = new Worker('./worker.js', { type: 'module' });
+        
+        async function analyze() {
+            const text = D.textInput.value;
+            if (!text.trim()) {
+                // resetUI(); // You can add a reset function here
+                return;
+            }
             
-            worker.postMessage({ type: 'INITIALIZE', config: SCRIPT_CONFIG });
+            D.coachOutput.classList.add('analyzing');
+            D.coachOutput.textContent = '...';
 
-            D.textInput.addEventListener('input', () => {
-                clearTimeout(typingTimer);
-                typingTimer = setTimeout(() => {
-                    const text = D.textInput.value;
-                    if (!text.trim()) { resetUI('Model ready.'); return; }
-                    D.feedbackGrid.classList.remove('is-idle');
-                    D.coachOutput.classList.add('analyzing');
-                    D.coachOutput.textContent = '...';
-                    worker.postMessage({type: 'ANALYZE', text: text});
-                }, SCRIPT_CONFIG.debounceDelay);
-            });
+            try {
+                const response = await fetch(`${API_URL}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
 
-            worker.onmessage = (event) => {
-                // Every message from worker means it's no longer analyzing.
+                if (!response.ok) throw new Error('Network response was not ok');
+                
+                const result = await response.json();
+                
+                // updateUI(result.reactive_score, result.triggers); // Update your gauge, chips, etc.
+                
+            } catch (error) {
+                console.error("Analysis failed:", error);
+                D.coachOutput.textContent = 'Analysis failed.';
+            } finally {
                 D.coachOutput.classList.remove('analyzing');
-                const { type, payload, text, percentage } = event.data;
-
-                if (type === 'STATUS') {
-                    D.progressContainer.style.display = 'none';
-                    D.coachOutput.textContent = text;
-                } else if (type === 'DOWNLOAD_PROGRESS') {
-                    D.progressContainer.style.display = 'block';
-                    D.coachOutput.textContent = text;
-                    D.progressBar.style.width = `${percentage}%`;
-                } else if (type === 'READY') {
-                    D.progressContainer.style.display = 'none';
-                    resetUI('Model ready.');
-                    D.textInput.disabled = false;
-                    D.textInput.placeholder = "Type what you're about to send...";
-                } else if (type === 'RESULT') {
-                    const { smoothedScore, triggers, isLargeChange } = payload;
-                    if(isLargeChange) D.coachOutput.textContent = "Wow, big change! Digesting...";
-                    updateGauge(smoothedScore);
-                    updateChips(triggers);
-                    updateCoaching(smoothedScore, triggers);
-                } else if (type === 'ERROR') {
-                    D.coachOutput.textContent = text;
-                } else if (type === 'FATAL_ERROR') {
-                    D.coachOutput.textContent = text;
-                    D.coachOutput.style.color = '#d90429';
-                    D.textInput.disabled = true;
-                    D.reloadButton.style.display = 'block';
-                } else if (type === 'NO_OP') {
-                    // Text was unchanged, just exit the analyzing state.
-                    // The class removal at the top of this handler took care of it.
-                    // We might need to restore the previous coaching text.
-                    updateCoaching(parseFloat(D.gaugeScore.textContent)/100, []); // A simple way to restore text
-                }
-            };
-        } else {
-            D.coachOutput.textContent = "Web Workers are not supported in this browser.";
+            }
         }
+
+        D.textInput.addEventListener('input', () => {
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(analyze, DEBOUNCE_DELAY);
+        });
     </script>
 </body>
 </html>
