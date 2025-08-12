@@ -28,57 +28,131 @@
 <body>
     <div class="wrap">
         <textarea id="reactivity-input" placeholder="Type to begin analysis..."></textarea>
-        <div class="feedback-grid">
+        <div class="feedback-grid is-idle">
+            <div class="gauge-container">
+                <svg class="gauge-svg" viewBox="0 0 120 120">
+                    <circle class="gauge-track" cx="60" cy="60" r="52" />
+                    <circle id="gauge-value" class="gauge-value" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="326.7" stroke="#00E091" />
+                </svg>
+                <div class="gauge-text">
+                    <div id="gauge-badge" class="gauge-badge">CALM</div>
+                    <div id="gauge-score" class="gauge-score">0%</div>
+                </div>
             </div>
+            <div id="coach-output" class="coach-output">Waiting for input...</div>
+            <div id="chips-container" class="chips-container"></div>
+        </div>
     </div>
 
     <script type="module">
         // --- CONFIGURATION ---
-        const API_URL = "YOUR_SERVER_URL_HERE"; // IMPORTANT: Update this after you deploy
+        const API_URL = "YOUR_SERVER_URL_HERE"; // IMPORTANT: Update this after you deploy your Python backend
         const DEBOUNCE_DELAY = 300;
+        const circumference = 326.7;
 
-        const D = { /* ... DOM element references ... */ };
-        // This is a simplified version for brevity
-        D.textInput = document.getElementById('reactivity-input');
-        // ... (add the rest of the gauge, chips, coach elements here)
+        // --- DOM ELEMENTS ---
+        const D = {
+            textInput: document.getElementById('reactivity-input'),
+            feedbackGrid: document.querySelector('.feedback-grid'),
+            gaugeValue: document.getElementById('gauge-value'),
+            gaugeBadge: document.getElementById('gauge-badge'),
+            gaugeScore: document.getElementById('gauge-score'),
+            coachOutput: document.getElementById('coach-output'),
+            chipsContainer: document.getElementById('chips-container')
+        };
 
         let typingTimer;
-        
+        let lastAnalyzedText = '';
+
+        // --- UI UPDATE FUNCTIONS ---
+        function updateGauge(score) {
+            if (score < 0.15) { score = 0; }
+            const percentage = Math.round(score * 100);
+            const offset = circumference * (1 - score);
+            let color = '#00E091', badgeText = 'CALM';
+            if (score >= 0.8) { color = '#d90429'; badgeText = 'CRITICAL'; } 
+            else if (score >= 0.6) { color = '#FF5A5A'; badgeText = 'HIGH'; } 
+            else if (score >= 0.4) { color = '#FFC700'; badgeText = 'MEDIUM'; } 
+            else if (score >= 0.2) { color = '#76c893'; badgeText = 'LOW'; }
+            D.gaugeValue.style.strokeDashoffset = offset;
+            D.gaugeValue.style.stroke = color;
+            D.gaugeBadge.textContent = badgeText;
+            D.gaugeBadge.style.color = color;
+            D.gaugeScore.textContent = `${percentage}%`;
+        }
+
+        function updateChips(triggers = []) {
+            D.chipsContainer.innerHTML = '';
+            triggers.slice(0, 4).forEach(t => {
+                const chip = document.createElement('div');
+                chip.className = 'chip';
+                chip.textContent = t;
+                D.chipsContainer.appendChild(chip);
+            });
+        }
+
+        function updateCoaching(score, triggers = []) {
+            const s = new Set(triggers.map(t => t.toLowerCase()));
+            let c = "Notice the body breathing.";
+            if (score >= 0.7) c = s.has("accusation") ? "Focus on 'I' statements." : "Soften shoulders.";
+            else if (score >= 0.4) c = "Is this truly urgent? One slower breath.";
+            D.coachOutput.textContent = c;
+        }
+
+        function resetUI() {
+            updateGauge(0);
+            updateChips([]);
+            D.coachOutput.textContent = 'Waiting for input...';
+            D.feedbackGrid.classList.add('is-idle');
+        }
+
+        // --- MAIN ANALYSIS FUNCTION ---
         async function analyze() {
             const text = D.textInput.value;
-            if (!text.trim()) {
-                // resetUI(); // You can add a reset function here
-                return;
-            }
-            
+            const normalizedText = text.trim();
+
+            if (normalizedText === lastAnalyzedText) return;
+            if (!normalizedText) { resetUI(); return; }
+
+            lastAnalyzedText = normalizedText;
+            D.feedbackGrid.classList.remove('is-idle');
             D.coachOutput.classList.add('analyzing');
             D.coachOutput.textContent = '...';
 
             try {
+                if (!API_URL.startsWith('http')) {
+                    throw new Error("API_URL is not configured. Please update the script.");
+                }
+
                 const response = await fetch(`${API_URL}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text })
+                    body: JSON.stringify({ text: normalizedText })
                 });
 
-                if (!response.ok) throw new Error('Network response was not ok');
+                if (!response.ok) throw new Error(`Server returned an error: ${response.status}`);
                 
                 const result = await response.json();
                 
-                // updateUI(result.reactive_score, result.triggers); // Update your gauge, chips, etc.
+                updateGauge(result.reactive_score);
+                updateChips(result.triggers);
+                updateCoaching(result.reactive_score, result.triggers);
                 
             } catch (error) {
                 console.error("Analysis failed:", error);
-                D.coachOutput.textContent = 'Analysis failed.';
+                D.coachOutput.textContent = 'Analysis service is unavailable.';
             } finally {
                 D.coachOutput.classList.remove('analyzing');
             }
         }
 
+        // --- INITIALIZATION ---
         D.textInput.addEventListener('input', () => {
             clearTimeout(typingTimer);
             typingTimer = setTimeout(analyze, DEBOUNCE_DELAY);
         });
+
+        resetUI(); // Set the initial state
     </script>
 </body>
 </html>
