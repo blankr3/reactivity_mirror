@@ -29,7 +29,7 @@
 </head>
 <body>
     <div class="wrap">
-        <textarea id="reactivity-input" placeholder="Type what you're about to send..."></textarea>
+        <textarea id="reactivity-input" placeholder="Type what you're about to send..." disabled></textarea>
         <div class="feedback-grid">
             <div class="gauge-container">
                 <svg class="gauge-svg" viewBox="0 0 120 120">
@@ -62,12 +62,14 @@
         function updateGauge(score) { if (score < 0.15) { score = 0; } const p=Math.round(score*100),o=circumference*(1-score);let c='#00E091',b='CALM';if(score>=0.8){c='#d90429';b='CRITICAL';}else if(score>=0.6){c='#FF5A5A';b='HIGH';}else if(score>=0.4){c='#FFC700';b='MEDIUM';}else if(score>=0.2){c='#76c893';b='LOW';}D.gaugeValue.style.strokeDashoffset=o;D.gaugeValue.style.stroke=c;D.gaugeBadge.textContent=b;D.gaugeBadge.style.color=c;D.gaugeScore.textContent=`${p}%`;};
         function updateChips(triggers = []) { D.chipsContainer.innerHTML='';triggers.slice(0,4).forEach(t=>{const c=document.createElement('div');c.className='chip';c.textContent=t;D.chipsContainer.appendChild(c);});};
         function updateCoaching(score, triggers = []) {const s=new Set(triggers.map(t=>t.toLowerCase()));let c="Notice the body breathing.";if(score>=0.7)c=s.has("blame")?"Pause. Three slow breaths.":"Soften shoulders.";else if(score>=0.4)c=s.has("urgency")?"Is this truly urgent? One slower breath.":"Unclench the jaw.";D.coachOutput.textContent=c;};
-        function resetUI(message='Initializing AI engine...') { smoothedScore=0;lastAnalyzedText='';updateGauge(0);updateChips([]);D.coachOutput.textContent=message;D.feedbackGrid.classList.add('is-idle'); D.progressContainer.style.display='none'; D.progressBar.style.width='0%';}
+        function resetUI(message='Initializing...') { smoothedScore=0;lastAnalyzedText='';updateGauge(0);updateChips([]);D.coachOutput.textContent=message;D.feedbackGrid.classList.add('is-idle'); D.progressContainer.style.display='none'; D.progressBar.style.width='0%';}
         function levenshtein(a,b){const m=Array(b.length+1).fill(null).map(()=>Array(a.length+1).fill(null));for(let i=0;i<=a.length;i+=1){m[0][i]=i;}for(let j=0;j<=b.length;j+=1){m[j][0]=j;}for(let j=1;j<=b.length;j+=1){for(let i=1;i<=a.length;i+=1){const ind=a[i-1]===b[j-1]?0:1;m[j][i]=Math.min(m[j][i-1]+1,m[j-1][i]+1,m[j-1][i-1]+ind);}}return m[b.length][a.length];}
 
         if (window.Worker) {
             resetUI('Starting worker...');
+            D.textInput.placeholder = "Please wait, AI engine is loading...";
             const worker = new Worker('./worker.js', { type: 'module' });
+            
             worker.postMessage({ type: 'INITIALIZE', config: SCRIPT_CONFIG });
 
             worker.onmessage = (event) => {
@@ -95,6 +97,7 @@
                             D.coachOutput.classList.add('analyzing');
                             const isLargeChange = levenshtein(lastAnalyzedText, normalizedText) > SCRIPT_CONFIG.LARGE_CHANGE_THRESHOLD;
                             D.coachOutput.textContent = isLargeChange ? "Wow, big change! Digesting..." : "Analyzing...";
+                            // FIX: Send message as an object
                             worker.postMessage({type: 'ANALYZE', text: normalizedText});
                         }, SCRIPT_CONFIG.debounceDelay);
                     });
@@ -117,8 +120,6 @@
                     D.coachOutput.textContent = text;
                 }
             };
-            D.textInput.disabled = true;
-            D.textInput.placeholder = "Please wait, AI engine is loading...";
         } else {
             D.coachOutput.textContent = "Web Workers are not supported in this browser.";
         }
